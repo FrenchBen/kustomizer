@@ -22,15 +22,22 @@ import (
 	"os"
 	"path/filepath"
 
-	"filippo.io/age"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
-	gcrv1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
+
+	"github.com/containers/image/v5/transports/alltransports"
 )
 
-func Push(ctx context.Context, url string, data []byte, meta *Metadata, recipients []age.Recipient) (string, error) {
+func Build(ctx context.Context, imageNames []string, data []byte) (string, error) {
+	srcRef, err := alltransports.ParseImageName(imageNames[0])
+	if err != nil {
+		return fmt.Errorf("Invalid source name %s: %v", imageNames[0], err)
+	}
+	destRef, err := alltransports.ParseImageName(imageNames[1])
+	if err != nil {
+		return fmt.Errorf("Invalid destination name %s: %v", imageNames[1], err)
+	}
 	ref, err := name.ParseReference(url)
 	if err != nil {
 		return "", fmt.Errorf("parsing reference failed: %w", err)
@@ -44,18 +51,6 @@ func Push(ctx context.Context, url string, data []byte, meta *Metadata, recipien
 
 	tarFile := filepath.Join(tmpDir, "all.tar")
 	dataFile := "all.yaml"
-
-	if len(recipients) > 0 {
-		meta.Encrypted = AgeEncryptionVersion
-		encData, err := encrypt(data, recipients)
-		if err != nil {
-			return "", fmt.Errorf("failed to encrypt data with age: %w", err)
-		}
-
-		dataFile = "all.yaml.age"
-		data = encData
-	}
-
 	if err := tarContent(tarFile, dataFile, data); err != nil {
 		return "", err
 	}
@@ -63,17 +58,6 @@ func Push(ctx context.Context, url string, data []byte, meta *Metadata, recipien
 	img, err := crane.Append(empty.Image, tarFile)
 	if err != nil {
 		return "", fmt.Errorf("appending content failed: %w", err)
-	}
-
-	img = mutate.Annotations(img, meta.ToAnnotations()).(gcrv1.Image)
-
-	if err := crane.Push(img, url, craneOptions(ctx)...); err != nil {
-		return "", fmt.Errorf("pushing image failed: %w", err)
-	}
-
-	digest, err := img.Digest()
-	if err != nil {
-		return "", fmt.Errorf("parsing digest failed: %w", err)
 	}
 
 	return ref.Context().Digest(digest.String()).String(), nil

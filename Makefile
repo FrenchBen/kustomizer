@@ -66,11 +66,14 @@ release-docs:
 	git checkout main
 
 DEMO_IMAGE ?= ghcr.io/stefanprodan/kustomizer-demo-app
-DEMO_TAG ?= 0.0.1
+DEMO_TAG ?= 1.0.0
 publish-demo:
 	kustomizer push artifact -k ./examples/demo-app oci://$(DEMO_IMAGE):$(DEMO_TAG) --sign --cosign-key ~/.cosign/cosign.key
 	kustomizer tag artifact oci://$(DEMO_IMAGE):$(DEMO_TAG) latest
 	kustomizer inspect artifact oci://$(DEMO_IMAGE)  --verify --key ~/.cosign/cosign.pub
+
+build-demo:
+	kustomizer build inventory demo-app --artifact oci://$(DEMO_IMAGE):$(DEMO_TAG)
 
 dockerfile:
 	echo \
