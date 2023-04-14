@@ -23,42 +23,186 @@ import (
 	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	gcr "github.com/google/go-containerregistry/pkg/v1/types"
 
-	"github.com/containers/image/v5/transports/alltransports"
+	"github.com/containers/image/v5/types"
 )
 
-func Build(ctx context.Context, imageNames []string, data []byte) (string, error) {
-	srcRef, err := alltransports.ParseImageName(imageNames[0])
-	if err != nil {
-		return fmt.Errorf("Invalid source name %s: %v", imageNames[0], err)
-	}
-	destRef, err := alltransports.ParseImageName(imageNames[1])
-	if err != nil {
-		return fmt.Errorf("Invalid destination name %s: %v", imageNames[1], err)
-	}
-	ref, err := name.ParseReference(url)
-	if err != nil {
-		return "", fmt.Errorf("parsing reference failed: %w", err)
-	}
+func Build(ctx context.Context, image types.ImageReference, format, output string, data []byte) error {
 
 	tmpDir, err := os.MkdirTemp("", "oci")
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer os.RemoveAll(tmpDir)
 
 	tarFile := filepath.Join(tmpDir, "all.tar")
 	dataFile := "all.yaml"
+
 	if err := tarContent(tarFile, dataFile, data); err != nil {
-		return "", err
+		return err
+	}
+	base := empty.Image
+	switch format {
+	case "docker-dir", "docker-archive":
+		base = mutate.MediaType(base, gcr.DockerManifestSchema2)
+		base = mutate.ConfigMediaType(base, gcr.DockerConfigJSON)
+
+	default:
+		base = mutate.MediaType(base, gcr.OCIManifestSchema1)
+		base = mutate.ConfigMediaType(base, gcr.OCIConfigJSON)
 	}
 
-	img, err := crane.Append(empty.Image, tarFile)
+	srcImg, err := crane.Append(base, tarFile)
 	if err != nil {
-		return "", fmt.Errorf("appending content failed: %w", err)
+		return fmt.Errorf("appending content failed: %w", err)
 	}
 
-	return ref.Context().Digest(digest.String()).String(), nil
+	// -------------------------- new logic
+	// options := &libimage.SaveOptions{}
+
+	// Name the image as tmp
+	// tag, err := name.NewTag(image.DockerReference().Name(), name.StrictValidation)
+	// if err != nil {
+	// 	return "", fmt.Errorf("creating new tmp tag failed: %w", err)
+	// }
+
+	// Use the name from destRef to create a file
+	o, err := os.Create(output)
+	if err != nil {
+		return fmt.Errorf("creating %q to write image tarball failed %v", output, err)
+	}
+	defer o.Close()
+	return crane.Export(srcImg, o)
+
+	// if err := tarball.Write(tag, srcImg, o); err != nil {
+	// 	return "", fmt.Errorf("Unexpected error writing tarball: %v", err)
+	// }
+
+	/*
+		runtime := new(libimage.Runtime)
+		storeOpts, err := storage.DefaultStoreOptions(true, rootless.GetRootlessUID())
+		if err != nil {
+			return nil, err
+		}
+		runtime.storageConfig = storeOpts
+
+
+
+
+
+
+
+
+
+
+
+
+		switch format {
+		case "oci-archive":
+			destRef, err = ociArchiveTransport.NewReference(output, image.DockerReference().Name())
+
+		case "oci-dir":
+			destRef, err = ociTransport.NewReference(output, image.DockerReference().Name())
+			options.ManifestMIMEType = ociv1.MediaTypeImageManifest
+
+		case "docker-dir":
+			destRef, err = dirTransport.NewReference(output)
+			options.ManifestMIMEType = manifest.DockerV2Schema2MediaType
+
+		case "docker-archive":
+			destRef, err = dockerArchiveTransport.NewReference(output, image.DockerReference().Name())
+			options.ManifestMIMEType = manifest.DockerV2Schema2MediaType
+
+		default:
+			return "", fmt.Errorf("unsupported format %q for saving images", format)
+		}
+
+		/*
+				// Create a store for the runtime
+				store, err := storage.GetStore(r.storageConfig)
+				if err != nil {
+					return err
+				}
+
+				runtime := new(libimage.Runtime)
+
+				r.store = store
+				is.Transport.SetStore(store)
+
+				// Set up a storage service for creating container root filesystems from
+				// images
+				r.storageService = getStorageService(r.store)
+
+				runtimeOptions := &libimage.RuntimeOptions{
+					SystemContext: r.imageContext,
+				}
+				libimageRuntime, err := libimage.RuntimeFromStore(store, runtimeOptions)
+				if err != nil {
+					return err
+				}
+				r.libimageRuntime = libimageRuntime
+				// Run the libimage events routine.
+				r.libimageEvents()
+
+
+			// Save the two images into a multi-image archive.  This way, we can
+			// reload the images for each test.
+			saveOptions := &libimage.SaveOptions{}
+			saveOptions.Writer = os.Stdout
+			imageCache, err := os.CreateTemp("", "saveimagecache")
+			require.NoError(t, err)
+			imageCache.Close()
+			defer os.Remove(imageCache.Name())
+			err = runtime.Save(ctx, []string{"alpine", "busybox"}, "docker-archive", imageCache.Name(), saveOptions)
+	*/
+
+	/*
+		Need to override OS to be linux: `opts.overrideOS`
+		Create src Ref - the Crane Image - parseImage is in OCI format oci://registry/image/app:tag
+		Create dest Ref - the archive based on cli parameter oci-archive:some-archive-name.tar
+		Create the context for the work ( OSChoice / overrideOS is set here)
+
+		Do the work to copy....
+
+	*/
+
+	// srcRef, err := alltransports.ParseImageName(srcImg)
+	// if err != nil {
+	// 	return "", fmt.Errorf("Invalid source name %s: %v", srcImg, err)
+	// }
+
+	// sharedOpts := skopeo.ImageOptions{
+	// 	skopeo.DockerImageOptions: skopeo.DockerImageOptions{
+	// 		global: &skopeo.GlobalOptions{},
+	// 		shared: &skopeo.SharedImageOptions{},
+	// 	},
+	// }
+	// srcOpts := skopeo.ImageFlags(sharedOpts)
+	// destOpts := skopeo.ImageDestFlags(sharedOpts)
+	// opts := skopeo.CopyOptions{
+	// 	global:    skopeo.Global,
+	// 	srcImage:  srcOpts,
+	// 	destImage: destOpts,
+	// 	retryOpts: retry.Options{},
+	// }
+
+	// sourceCtx, err := opts.srcImage.newSystemContext()
+	// if err != nil {
+	// 	return err
+	// }
+	// destinationCtx, err := opts.destImage.newSystemContext()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// Look at common image save:
+	// https://github.com/containers/common/blob/main/libimage/save.go
+
+	//  --override-os
+	// src: docker://docker.apple.com/base-images/ubi9-minimal/ubi-minimal-runtime:latest
+	// dest: oci-archive:ubi9-runtime.tar
+
 }
