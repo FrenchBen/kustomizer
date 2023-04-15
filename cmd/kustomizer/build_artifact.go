@@ -22,9 +22,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containers/image/v5/transports/alltransports"
-	"github.com/docker/distribution/reference"
 	"github.com/fluxcd/pkg/ssa"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 	"github.com/stefanprodan/kustomizer/pkg/registry"
 )
@@ -32,14 +31,14 @@ import (
 var buildArtifactCmd = &cobra.Command{
 	Use:   "artifact",
 	Short: "Build generates an inventory and writes the resulting artifact to the oci target.",
-	Example: `  kustomizer build artifact oci://docker.io/user/repo --kustomize <overlay path> [--file <dir path>|<file path>] [--format oci-archive|oci-dir|docker-dir|docker-archive] [--output <filename or dir>]
+	Example: `  kustomizer build artifact docker.io/user/repo --kustomize <overlay path> [--file <dir path>|<file path>] [--format oci-archive|oci-dir|docker-dir|docker-archive] [--output <filename or dir>]
 
   # Build from Docker Hub registry into a local OCI archive
-  kustomizer build artifact oci:user/repo:$(git rev-parse --short HEAD) \
+  kustomizer build artifact docker.io/user/repo:$(git rev-parse --short HEAD) \
 	--file ./deploy/manifests
 
   # Build to a local OCI archive
-  kustomizer build artifact user/repo:$(git rev-parse --short HEAD) --format oci-archive --output repo-archive-$(git tag --points-at HEAD).tar \
+  kustomizer build artifact docker.io/user/repo:$(git rev-parse --short HEAD) --format oci-archive --output repo-archive-$(git tag --points-at HEAD).tar \
 	--kustomize="./deploy/production" \
 	
 `,
@@ -62,7 +61,7 @@ func init() {
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.kustomize, "kustomize", "k", "",
 		"Path to a directory that contains a kustomization.yaml.")
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.format, "format", "", "oci-archive",
-		"Save image to oci-archive, oci-dir (directory with oci manifest type), docker-archive, docker-dir (directory with v2s2 manifest type) (default 'oci-archive')")
+		"Save image to oci-archive, docker-archive (default 'oci-archive')")
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.output, "output", "o", "",
 		" If specified, write output to this path. (default: transform image name to user-repo.tar)")
 	buildArtifactCmd.Flags().StringSliceVarP(&buildArtifactArgs.patch, "patch", "p", nil,
@@ -81,18 +80,22 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	if !validateFormat(buildArtifactArgs.format) {
-		return fmt.Errorf("valid formats are: oci-archive, oci-dir (directory with oci manifest type), docker-archive, docker-dir (directory with v2s2 manifest type)")
+		return fmt.Errorf("valid formats are: oci-archive, docker-archive")
 	}
 
 	url := args[0]
-	imgRef, err := alltransports.ParseImageName(url)
+	imgRef, err := name.NewTag(url)
 	if err != nil {
 		return fmt.Errorf("invalid image name %s: %v", url, err)
 	}
 
 	outputFile := buildArtifactArgs.output
 	if outputFile == "" {
-		outputFile = fmt.Sprintf("%s.tar", strings.Replace(reference.Path(imgRef.DockerReference()), "/", "-", -1))
+		repo := imgRef.Repository.RepositoryStr()
+		if imgRef.Repository.Registry.Name() == "docker:" && repo[0:1] == "/" {
+			repo = repo[1:]
+		}
+		outputFile = fmt.Sprintf("%s.img", strings.Replace(repo, "/", "-", -1))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), rootArgs.timeout)
@@ -115,7 +118,7 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := registry.Build(ctx, imgRef, buildArtifactArgs.format, outputFile, []byte(yml)); err != nil {
+	if err := registry.Build(ctx, url, buildArtifactArgs.format, outputFile, []byte(yml)); err != nil {
 		return fmt.Errorf("building archive failed: %w", err)
 	}
 
@@ -124,7 +127,7 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 }
 
 func validateFormat(format string) bool {
-	validFormats := []string{"oci-archive", "oci-dir", "docker-archive", "docker-dir"}
+	validFormats := []string{"oci-archive", "docker-archive"}
 	for _, v := range validFormats {
 		if v == format {
 			return true
