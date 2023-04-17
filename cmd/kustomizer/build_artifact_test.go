@@ -17,9 +17,38 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
 	"testing"
-	// . "github.com/onsi/gomega"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	. "github.com/onsi/gomega"
 )
 
 func TestBuildArchive(t *testing.T) {
+	g := NewWithT(t)
+	id := randStringRunes(5)
+	tag := "v1.0.0"
+	artifact := fmt.Sprintf("oci://%s/%s:%s", registryHost, id, tag)
+	artifactRef, err := name.NewTag(artifact)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	artifactImg := buildOutput(artifactRef.Repository.RepositoryStr())
+
+	err = createNamespace(id)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	dir, err := makeTestDir(id, testManifests(id, id, false))
+	g.Expect(err).NotTo(HaveOccurred())
+
+	t.Run("builds artifacts", func(t *testing.T) {
+		output, err := executeCommand(fmt.Sprintf(
+			"build artifact %s -k %s",
+			artifact,
+			dir,
+		))
+
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("\n%s", output)
+		g.Expect(output).To(MatchRegexp(artifactImg))
+	})
 }

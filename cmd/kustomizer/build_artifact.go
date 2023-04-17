@@ -1,5 +1,4 @@
 /*
-Copyright 2021 Stefan Prodan
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -91,11 +90,7 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 
 	outputFile := buildArtifactArgs.output
 	if outputFile == "" {
-		repo := imgRef.Repository.RepositoryStr()
-		if imgRef.Repository.Registry.Name() == "docker:" && repo[0:1] == "/" {
-			repo = repo[1:]
-		}
-		outputFile = fmt.Sprintf("%s.img", strings.Replace(repo, "/", "-", -1))
+		outputFile = buildOutput(imgRef.Repository.RepositoryStr())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), rootArgs.timeout)
@@ -135,4 +130,11 @@ func validateFormat(format string) bool {
 	}
 
 	return false
+}
+
+func buildOutput(repo string) string {
+	if repo[0:1] == "/" {
+		repo = repo[1:]
+	}
+	return fmt.Sprintf("%s.img", strings.Replace(repo, "/", "-", -1))
 }
