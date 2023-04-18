@@ -18,9 +18,9 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	. "github.com/onsi/gomega"
 )
 
@@ -28,27 +28,61 @@ func TestBuildArchive(t *testing.T) {
 	g := NewWithT(t)
 	id := randStringRunes(5)
 	tag := "v1.0.0"
-	artifact := fmt.Sprintf("oci://%s/%s:%s", registryHost, id, tag)
-	artifactRef, err := name.NewTag(artifact)
-	g.Expect(err).NotTo(HaveOccurred())
+	// create tmp location for asset output
+	testDir := filepath.Join(tmpDir, id)
+	outputImg := fmt.Sprintf("%s/kustomizer-%s.img", testDir, id)
 
-	artifactImg := buildOutput(artifactRef.Repository.RepositoryStr())
-
-	err = createNamespace(id)
+	// TODO: repair bug in upstream package
+	// BUG: current go-containerregistry parsing doesn't parse local instances ?
+	// artifact := fmt.Sprintf("oci:%s/kustomizer/%s:%s", registryHost, id, tag)
+	artifact := fmt.Sprintf("oci://ghcr.io/kustomizer/%s:%s", id, tag)
+	artifactImg, err := buildOutput(artifact)
 	g.Expect(err).NotTo(HaveOccurred())
+	artifactImg = fmt.Sprintf("%s/%s", testDir, artifactImg)
 
 	dir, err := makeTestDir(id, testManifests(id, id, false))
 	g.Expect(err).NotTo(HaveOccurred())
 
-	t.Run("builds artifacts", func(t *testing.T) {
+	t.Run("build oci-archive image", func(t *testing.T) {
+		// we override the output location,
+		// and confirm the artifact was built in our temp dir to not pollute the repo
 		output, err := executeCommand(fmt.Sprintf(
-			"build artifact %s -k %s",
+			"build artifact %s -k %s --output %s",
 			artifact,
 			dir,
+			artifactImg,
 		))
 
 		g.Expect(err).NotTo(HaveOccurred())
 		t.Logf("\n%s", output)
 		g.Expect(output).To(MatchRegexp(artifactImg))
+	})
+
+	t.Run("build docker-archive image", func(t *testing.T) {
+		// we override the output location,
+		// and confirm the artifact was built in our temp dir to not pollute the repo
+		output, err := executeCommand(fmt.Sprintf(
+			"build artifact %s -k %s --format docker-archive --output %s",
+			artifact,
+			dir,
+			artifactImg,
+		))
+
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("\n%s", output)
+		g.Expect(output).To(MatchRegexp(artifactImg))
+	})
+
+	t.Run("build oci-archive with output target", func(t *testing.T) {
+		output, err := executeCommand(fmt.Sprintf(
+			"build artifact %s -k %s -o %s",
+			artifact,
+			dir,
+			outputImg,
+		))
+
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("\n%s", output)
+		g.Expect(output).To(MatchRegexp(outputImg))
 	})
 }

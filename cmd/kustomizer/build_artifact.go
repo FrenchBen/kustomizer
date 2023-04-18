@@ -60,9 +60,9 @@ func init() {
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.kustomize, "kustomize", "k", "",
 		"Path to a directory that contains a kustomization.yaml.")
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.format, "format", "", "oci-archive",
-		"Save image to oci-archive, docker-archive (default 'oci-archive')")
+		"Save image to oci-archive, docker-archive")
 	buildArtifactCmd.Flags().StringVarP(&buildArtifactArgs.output, "output", "o", "",
-		" If specified, write output to this path. (default: transform image name to user-repo.tar)")
+		" If specified, write output to this path. (default: transform image name to - ending in .img)")
 	buildArtifactCmd.Flags().StringSliceVarP(&buildArtifactArgs.patch, "patch", "p", nil,
 		"Path to a kustomization file that contains a list of patches.")
 
@@ -83,14 +83,12 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	url := args[0]
-	imgRef, err := name.NewTag(url)
+	outputFile, err := buildOutput(url)
 	if err != nil {
-		return fmt.Errorf("invalid image name %s: %v", url, err)
+		return fmt.Errorf("%s", err)
 	}
-
-	outputFile := buildArtifactArgs.output
-	if outputFile == "" {
-		outputFile = buildOutput(imgRef.Repository.RepositoryStr())
+	if buildArtifactArgs.output != "" {
+		outputFile = buildArtifactArgs.output
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), rootArgs.timeout)
@@ -117,7 +115,7 @@ func runBuildArtifactCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("building archive failed: %w", err)
 	}
 
-	logger.Println("bluilt image archive at ", outputFile)
+	logger.Println("bluilt image archive as ", outputFile)
 	return nil
 }
 
@@ -132,9 +130,14 @@ func validateFormat(format string) bool {
 	return false
 }
 
-func buildOutput(repo string) string {
+func buildOutput(url string) (string, error) {
+	imgRef, err := name.ParseReference(url)
+	if err != nil {
+		return "", fmt.Errorf("invalid image name %s: %v", url, err)
+	}
+	repo := imgRef.Context().RepositoryStr()
 	if repo[0:1] == "/" {
 		repo = repo[1:]
 	}
-	return fmt.Sprintf("%s.img", strings.Replace(repo, "/", "-", -1))
+	return fmt.Sprintf("%s.img", strings.Replace(repo, "/", "-", -1)), nil
 }

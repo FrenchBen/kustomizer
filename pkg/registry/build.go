@@ -55,9 +55,6 @@ func Build(ctx context.Context, url, format, output string, data []byte) error {
 		base = mutate.ConfigMediaType(base, types.OCIConfigJSON)
 	}
 
-	raw, _ := base.RawManifest()
-	fmt.Printf("Base manifest: %s \n", raw)
-
 	srcImg, err := crane.Append(base, tarFile)
 	if err != nil {
 		return fmt.Errorf("appending content failed: %w", err)
@@ -69,8 +66,7 @@ func Build(ctx context.Context, url, format, output string, data []byte) error {
 		return fmt.Errorf("creating %q to write image tarball failed %v", output, err)
 	}
 	defer f.Close()
-	// this is just the tarball not an image
-	// return crane.Export(srcImg, o)
+
 	tag, err := name.NewTag(url)
 	if err != nil {
 		panic(err)
